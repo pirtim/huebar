@@ -250,6 +250,8 @@ final class HueBridgeDiscovery {
                         if !self.discoveredBridges.contains(where: { $0.id == bridgeID || $0.ip == ip }) {
                             self.discoveredBridges.append(bridge)
                         }
+                    } else {
+                        Self.logger.warning("Could not extract IP for \(bridgeID) from \(String(describing: connection.currentPath?.remoteEndpoint))")
                     }
                     connection.cancel()
                 case .failed(let error):
@@ -264,13 +266,22 @@ final class HueBridgeDiscovery {
         connection.start(queue: .main)
     }
 
+    /// Formats an IPv4 address for use as a URL host. The address from a
+    /// resolved connection carries its interface, and its description includes
+    /// it ("192.168.1.39%en0"), which URLComponents rejects. Rebuilding from the
+    /// raw bytes drops the interface.
+    nonisolated static func hostString(for address: IPv4Address) -> String? {
+        guard let bare = IPv4Address(address.rawValue) else { return nil }
+        return "\(bare)"
+    }
+
     private nonisolated func extractIP(from connection: NWConnection) -> String? {
         guard let innerEndpoint = connection.currentPath?.remoteEndpoint else { return nil }
         switch innerEndpoint {
         case let .hostPort(host, _):
             switch host {
             case let .ipv4(address):
-                return "\(address)"
+                return Self.hostString(for: address)
             case let .ipv6(address):
                 return "\(address)"
             default:
