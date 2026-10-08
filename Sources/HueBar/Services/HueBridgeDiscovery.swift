@@ -11,7 +11,7 @@ struct DiscoveredBridge: Identifiable, Hashable {
 @Observable
 @MainActor
 final class HueBridgeDiscovery {
-    private static let logger = Logger(subsystem: "com.huebar", category: "discovery")
+    nonisolated private static let logger = Logger(subsystem: "com.huebar", category: "discovery")
 
     var discoveredBridges: [DiscoveredBridge] = []
     var isSearching: Bool = false
@@ -221,9 +221,23 @@ final class HueBridgeDiscovery {
         resolveEndpoint(result.endpoint, bridgeID: bridgeID, name: name)
     }
 
+    /// TCP parameters for resolving a Bonjour service to an address.
+    /// Forced to IPv4: otherwise the system may pick an IPv6 link-local address
+    /// with a zone ID (e.g. "fe80::1%en0"), which can't be used as a URL host and
+    /// is tied to a specific network interface. Hue Bridges always have IPv4.
+    nonisolated static func resolutionParameters() -> NWParameters {
+        let parameters = NWParameters.tcp
+        if let ipOptions = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
+            ipOptions.version = .v4
+        } else {
+            logger.warning("Could not access IP options; mDNS resolution may return IPv6")
+        }
+        return parameters
+    }
+
     private func resolveEndpoint(_ endpoint: NWEndpoint, bridgeID: String, name: String) {
         pendingResolutions += 1
-        let connection = NWConnection(to: endpoint, using: .tcp)
+        let connection = NWConnection(to: endpoint, using: Self.resolutionParameters())
         connection.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in
                 guard let self else { return }
